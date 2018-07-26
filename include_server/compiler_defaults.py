@@ -48,6 +48,10 @@ DEBUG_TRACE = basics.DEBUG_TRACE
 DEBUG_DATA = basics.DEBUG_DATA
 NotCoveredError = basics.NotCoveredError
 
+GCC_ENV_BLACKLIST = [
+    "CPATH", "C_INCLUDE_PATH", "CPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",
+]
+
 
 def _RealPrefixWithinClientRoot(client_root, path):
   """Determine longest directory prefix of PATH and whether PATH contains a symlink.
@@ -206,10 +210,7 @@ def _SystemSearchdirsGCC(compiler, sysroot, language, canonical_lookup):
     # http://docs.freebsd.org/info/gcc/gcc.info.Environment_Variables.html,
     # or the "Environment Variables Affecting GCC" section of the gcc
     # info page.
-    if 'PATH' in os.environ:
-      trimmed_env = {'PATH': os.environ['PATH']}
-    else:
-      trimmed_env = {}
+    trimmed_env = {k: v for k, v in os.environ.items() if k not in GCC_ENV_BLACKLIST}
     p = subprocess.Popen(command,
                          shell=False,
                          stdin=None,
