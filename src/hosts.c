@@ -270,7 +270,7 @@ static int dcc_parse_options(const char **psrc,
             if (p[0] == '=') {
                 p++;
                 int ret;
-                if ((ret = dcc_dup_part(&p, &host->auth_name, ",")))
+                if ((ret = dcc_dup_part(&p, &host->auth_name, "/: \t\n\r\f,")))
 	                return ret;
 
                 if (host->auth_name) {
