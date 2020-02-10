@@ -524,73 +524,82 @@ class IncludeAnalyzerMemoizingNode(include_analyzer.IncludeAnalyzer):
     # time to set it.
     support_record.valid = True
 
-    # Try to get the cached result of parsing file.
     try:
-      (quote_includes, angle_includes, expr_includes, next_includes) = (
-        self.file_cache[fp_real_idx])
-    except KeyError:
-      # Parse the file.
-      self.file_cache[fp_real_idx] = self.parse_file.Parse(
-         self.realpath_map.string[fp_real_idx],
-         self.symbol_table)
-      (quote_includes, angle_includes, expr_includes, next_includes) = (
-        self.file_cache[fp_real_idx])
+      # Try to get the cached result of parsing file.
+      try:
+        (quote_includes, angle_includes, expr_includes, next_includes) = (
+          self.file_cache[fp_real_idx])
+      except KeyError:
+        # Parse the file.
+        self.file_cache[fp_real_idx] = self.parse_file.Parse(
+          self.realpath_map.string[fp_real_idx],
+          self.symbol_table)
+        (quote_includes, angle_includes, expr_includes, next_includes) = (
+          self.file_cache[fp_real_idx])
 
-    if self.systemdir_prefix_cache.StartsWithSystemdir(fp_real_idx, self.realpath_map):
-      return node
+      if self.systemdir_prefix_cache.StartsWithSystemdir(fp_real_idx, self.realpath_map):
+        return node
 
-    # Do the includes of the form #include "foo.h".
-    for quote_filepath in quote_includes:
-      node_ = self.FindNode(nodes_for_incl_config, quote_filepath, QUOTE,
-                            fp_dirname_idx)
-      if node_:
-        children.append(node_)
-        support_record.Update(node_[self.SUPPORT_RECORD].support_id)
-    # Do the includes of the form #include <foo.h>.
-    for angle_filepath in angle_includes:
-      node_ = self.FindNode(nodes_for_incl_config, angle_filepath, ANGLE)
-      if node_:
-        children.append(node_)
-        support_record.Update(node_[self.SUPPORT_RECORD].support_id)
-    if __debug__:
-      if expr_includes: # Computed includes are interesting
-        Debug(DEBUG_DATA, "FindNode, expr_includes: file: %s: '%s'",
-              (isinstance(fp, int) and includepath_map.String(fp)
-               or (isinstance(fp, tuple) and
-                   (dir_map.string[fp[0]],
-                    includepath_map.string[fp[1]]))),
-              expr_includes)
-
-    # Do the includes of the form #include expr, the computed includes.
-    for expr in expr_includes:
-      # Use multi-valued semantics to gather set of possible filepaths that the
-      # C/C++ string expr may evaluate to under preprocessing semantics, given
-      # the current symbol table. The symbols are all those of possible
-      # expansions.
-      (files, symbols) = (
-        macro_eval.ResolveExpr(includepath_map.Index,
-                               resolve,
-                               expr,
-                               self.currdir_idx, fp_dirname_idx,
-                               self.quote_dirs, self.angle_dirs,
-                               self.symbol_table))
-      for (fp_resolved_pair_, fp_real_idx_) in files:
-        node_ = self.FindNode(nodes_for_incl_config,
-                              fp_resolved_pair_,
-                              RESOLVED, None, fp_real_idx_)
+      # Do the includes of the form #include "foo.h".
+      for quote_filepath in quote_includes:
+        node_ = self.FindNode(nodes_for_incl_config, quote_filepath, QUOTE,
+                              fp_dirname_idx)
         if node_:
           children.append(node_)
           support_record.Update(node_[self.SUPPORT_RECORD].support_id)
-      #  Now the resolution of includes of the file of the present node depends
-      #  on symbols.
-      support_record.UpdateSet(symbols)
+      # Do the includes of the form #include <foo.h>.
+      for angle_filepath in angle_includes:
+        node_ = self.FindNode(nodes_for_incl_config, angle_filepath, ANGLE)
+        if node_:
+          children.append(node_)
+          support_record.Update(node_[self.SUPPORT_RECORD].support_id)
+      if __debug__:
+        if expr_includes: # Computed includes are interesting
+          Debug(DEBUG_DATA, "FindNode, expr_includes: file: %s: '%s'",
+                (isinstance(fp, int) and includepath_map.String(fp)
+                or (isinstance(fp, tuple) and
+                    (dir_map.string[fp[0]],
+                      includepath_map.string[fp[1]]))),
+                expr_includes)
 
-    # Do includes of the form #include_next "foo.h" or # #include_next <foo.h>.
-    for include_next_filepath in next_includes:
-      node_ = self.FindNode(nodes_for_incl_config, include_next_filepath, NEXT)
-      if node_:
-        children.append(node_)
-        support_record.Update(node_[self.SUPPORT_RECORD].support_id)
+      # Do the includes of the form #include expr, the computed includes.
+      for expr in expr_includes:
+        # Use multi-valued semantics to gather set of possible filepaths that the
+        # C/C++ string expr may evaluate to under preprocessing semantics, given
+        # the current symbol table. The symbols are all those of possible
+        # expansions.
+        (files, symbols) = (
+          macro_eval.ResolveExpr(includepath_map.Index,
+                                resolve,
+                                expr,
+                                self.currdir_idx, fp_dirname_idx,
+                                self.quote_dirs, self.angle_dirs,
+                                self.symbol_table))
+        for (fp_resolved_pair_, fp_real_idx_) in files:
+          node_ = self.FindNode(nodes_for_incl_config,
+                                fp_resolved_pair_,
+                                RESOLVED, None, fp_real_idx_)
+          if node_:
+            children.append(node_)
+            support_record.Update(node_[self.SUPPORT_RECORD].support_id)
+        #  Now the resolution of includes of the file of the present node depends
+        #  on symbols.
+        support_record.UpdateSet(symbols)
+
+      # Do includes of the form #include_next "foo.h" or # #include_next <foo.h>.
+      for include_next_filepath in next_includes:
+        node_ = self.FindNode(nodes_for_incl_config, include_next_filepath, NEXT)
+        if node_:
+          children.append(node_)
+          support_record.Update(node_[self.SUPPORT_RECORD].support_id)
+    except NotCoveredError:
+      # Clean up attempted early construction of node so that the cache
+      # is not polluted by incomplete/invalid entries.
+      del nodes_for_incl_config[key]
+      if resolution_mode != RESOLVED:
+        del nodes_for_incl_config[(fp_real_idx, fp_dirname_real_idx)]
+      raise
+
     return node
 
   def _CalculateIncludeClosureExceptSystem(self, node, include_closure):
